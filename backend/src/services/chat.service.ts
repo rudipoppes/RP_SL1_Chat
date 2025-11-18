@@ -28,6 +28,237 @@ interface ChatResult {
 }
 
 export class ChatService {
+  private async resolveDeviceIdentifiers(message: string): Promise<{ matchedDevices: any[], deviceContext: string }> {
+    try {
+      // Extract potential device identifiers from the message
+      const ipAddresses = this.extractIPAddresses(message)
+      const deviceNames = this.extractDeviceNames(message)
+      const keywords = this.extractKeywords(message)
+      
+      logger.info('Extracted device identifiers', {
+        ipAddresses,
+        deviceNames,
+        keywords,
+        message
+      })
+      
+      // Skip resolution if no identifiers found
+      if (ipAddresses.length === 0 && deviceNames.length === 0 && keywords.length === 0) {
+        return { matchedDevices: [], deviceContext: '' }
+      }
+      
+      // Get all devices to have a complete list
+      const devicesResult = await mcpService.executeTool({
+        id: 'list-devices-resolution',
+        type: 'function',
+        function: {
+          name: 'list_devices',
+          arguments: '{}'
+        }
+      })
+      
+      if (!devicesResult.success || !devicesResult.data) {
+        logger.warn('Device resolution failed - no data returned')
+        return { matchedDevices: [], deviceContext: '' }
+      }
+      
+      // Handle different response structures
+      let allDevices: any[] = []
+      const dataResponse: any = devicesResult.data
+      
+      // Log the actual structure for debugging
+      logger.info('Device resolution - raw data structure', {
+        devicesResultType: typeof devicesResult,
+        dataResponseType: typeof dataResponse,
+        dataResponseKeys: dataResponse && typeof dataResponse === 'object' ? Object.keys(dataResponse) : 'N/A',
+        dataResponseIsArray: Array.isArray(dataResponse),
+        dataResponseLength: Array.isArray(dataResponse) ? dataResponse.length : 'N/A',
+        ipAddresses,
+        message
+      })
+      
+      if (dataResponse.data && dataResponse.data.data) {
+        allDevices = dataResponse.data.data
+        logger.info('Device resolution - using data.data.data structure', { count: allDevices.length })
+      } else if (Array.isArray(dataResponse)) {
+        allDevices = dataResponse
+        logger.info('Device resolution - using direct array structure', { count: allDevices.length })
+      } else if (dataResponse && typeof dataResponse === 'object') {
+        // Handle nested data structure
+        if (dataResponse.data && Array.isArray(dataResponse.data)) {
+          allDevices = dataResponse.data
+          logger.info('Device resolution - using data array structure', { count: allDevices.length })
+        } else if (dataResponse.result && Array.isArray(dataResponse.result)) {
+          allDevices = dataResponse.result
+          logger.info('Device resolution - using result array structure', { count: allDevices.length })
+        } else {
+          logger.warn('Device resolution failed - unexpected object structure', { 
+            structure: typeof dataResponse, 
+            keys: Object.keys(dataResponse),
+            hasData: !!dataResponse.data,
+            hasResult: !!dataResponse.result,
+            dataType: typeof dataResponse.data
+          })
+          return { matchedDevices: [], deviceContext: '' }
+        }
+      } else {
+        logger.warn('Device resolution failed - unexpected data structure', { 
+          structure: typeof dataResponse,
+          isArray: Array.isArray(dataResponse),
+          isNull: dataResponse === null,
+          isUndefined: dataResponse === undefined
+        })
+        return { matchedDevices: [], deviceContext: '' }
+      }
+      
+      if (!Array.isArray(allDevices)) {
+        logger.warn('Device resolution failed - devices is not an array')
+        return { matchedDevices: [], deviceContext: '' }
+      }
+      
+      logger.info('Device resolution - analyzing devices', {
+        totalDevices: allDevices.length,
+        message
+      })
+      
+      logger.info('Device resolution - analyzing devices', {
+        totalDevices: allDevices.length,
+        message
+      })
+      
+      const matchedDevices: any[] = []
+      
+      // Match by IP addresses (exact match)
+      for (const ip of ipAddresses) {
+        const matches = allDevices.filter((device: any) => {
+          const deviceIP = device.Address || ''
+          const exactMatch = deviceIP === ip
+          const containsMatch = deviceIP.includes(ip) || ip.includes(deviceIP)
+          
+          if (exactMatch || containsMatch) {
+            logger.info('Found IP match', { ip, deviceIP, deviceName: device.Name, matchType: exactMatch ? 'exact' : 'contains' })
+            return true
+          }
+          return false
+        })
+        matchedDevices.push(...matches)
+      }
+      
+      // Match by device names (exact or partial)
+      for (const name of deviceNames) {
+        const matches = allDevices.filter((device: any) => {
+          const deviceName = device.Name || ''
+          const deviceNameLower = deviceName.toLowerCase()
+          const nameLower = name.toLowerCase()
+          
+          if (deviceNameLower.includes(nameLower) || nameLower.includes(deviceNameLower)) {
+            logger.info('Found name match', { name, deviceName })
+            return true
+          }
+          return false
+        })
+        matchedDevices.push(...matches)
+      }
+      
+      // Match by keywords (manufacturer, device type, etc.)
+      for (const keyword of keywords) {
+        const matches = allDevices.filter((device: any) => {
+          const pluginName = device.PluginName || ''
+          const pluginNameLower = pluginName.toLowerCase()
+          const keywordLower = keyword.toLowerCase()
+          
+          if (pluginNameLower.includes(keywordLower)) {
+            logger.info('Found keyword match', { keyword, pluginName })
+            return true
+          }
+          
+          // Check asset fields
+          const assetFields = device.AssetFields || []
+          const hasAssetMatch = assetFields.some((field: any) => {
+            const fieldValue = field.Value || ''
+            return fieldValue.toLowerCase().includes(keywordLower)
+          })
+          
+          if (hasAssetMatch) {
+            logger.info('Found asset keyword match', { keyword, deviceName: device.Name })
+            return true
+          }
+          
+          return false
+        })
+        matchedDevices.push(...matches)
+      }
+      
+      // Remove duplicates
+      const uniqueDevices = matchedDevices.filter((device: any, index, self) =>
+        index === self.findIndex((d: any) => d.ID === device.ID)
+      )
+      
+      logger.info('Device resolution completed', {
+        matchedCount: uniqueDevices.length,
+        matchedDevices: uniqueDevices.map(d => ({ id: d.ID, name: d.Name, ip: d.Address }))
+      })
+      
+      // Create device context for AI
+      let deviceContext = ''
+      if (uniqueDevices.length > 0) {
+        deviceContext = `\n\n## Device Matches Found:\n`
+        uniqueDevices.forEach(device => {
+          deviceContext += `- ${device.Name} (ID: ${device.ID}, IP: ${device.Address}, Type: ${device.PluginName})\n`
+        })
+        deviceContext += `\nUse these device IDs for any operations: ${uniqueDevices.map(d => d.ID).join(', ')}\n`
+      }
+      
+      return { matchedDevices: uniqueDevices, deviceContext }
+      
+    } catch (error: any) {
+      logger.error('Error resolving device identifiers', { error: error.message, stack: error.stack })
+      return { matchedDevices: [], deviceContext: '' }
+    }
+  }
+  
+  private extractIPAddresses(message: string): string[] {
+    // Match IPv4 addresses (simple regex)
+    const ipRegex = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g
+    const matches = message.match(ipRegex) || []
+    return [...new Set(matches)] // Remove duplicates
+  }
+  
+  private extractDeviceNames(message: string): string[] {
+    // Extract quoted device names first
+    const quotedNames = message.match(/"([^"]+)"/g) || []
+    const names = quotedNames.map(name => name.replace(/"/g, ''))
+    
+    // Also look for common device name patterns
+    const commonPatterns = [
+      /\b[A-Z]+-\d+[A-Z]*\b/g, // Like "SI-1238VA" or "PEYU-GD0887"
+      /\b[a-zA-Z]+-[a-zA-Z0-9-]+\b/g // General name patterns
+    ]
+    
+    commonPatterns.forEach(pattern => {
+      const matches = message.match(pattern) || []
+      names.push(...matches)
+    })
+    
+    return [...new Set(names)] // Remove duplicates
+  }
+  
+  private extractKeywords(message: string): string[] {
+    // Common network device keywords
+    const keywords = [
+      'cisco', 'palo alto', 'juniper', 'aruba', 'fortinet',
+      'router', 'switch', 'firewall', 'controller',
+      'ios', 'junos', 'catos', 'palo'
+    ]
+    
+    const messageLower = message.toLowerCase()
+    const foundKeywords = keywords.filter(keyword => 
+      messageLower.includes(keyword.toLowerCase())
+    )
+    
+    return foundKeywords
+  }
+
   async processMessage(request: ChatRequest): Promise<ChatResult> {
     const startTime = Date.now()
     
@@ -48,9 +279,25 @@ export class ChatService {
         }
       }
 
+      // Resolve device identifiers from user message
+      const { matchedDevices, deviceContext } = await this.resolveDeviceIdentifiers(request.message)
+      
+      logger.info('Device resolution completed', {
+        sessionId: request.sessionId,
+        devicesFound: matchedDevices.length,
+        deviceNames: matchedDevices.map(d => d.Name),
+        deviceIds: matchedDevices.map(d => d.ID)
+      })
+
+      // Enhance user message with device context for AI
+      let enhancedMessage = request.message
+      if (deviceContext) {
+        enhancedMessage += deviceContext
+      }
+
       // Get AI response with potential tool calls
       const aiResponse = await zaiService.sendMessage(
-        request.message,
+        enhancedMessage,
         request.conversationHistory || []
       )
 

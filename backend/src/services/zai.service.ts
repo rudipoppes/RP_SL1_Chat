@@ -36,7 +36,7 @@ export class ZAIService {
   constructor() {
     this.apiKey = config.ZAI_API_KEY
     if (!this.apiKey) {
-      logger.warn('ZAI_API_KEY not configured - using mock responses')
+      throw new Error('ZAI_API_KEY is required. Please configure the API key in your environment variables.')
     }
   }
 
@@ -50,9 +50,9 @@ export class ZAIService {
         historyLength: conversationHistory.length 
       })
 
-      // If no API key, provide mock responses that still work with the system
+      // API key is required - no fallback to mock responses
       if (!this.apiKey) {
-        return this.generateMockResponse(message, conversationHistory)
+        throw new Error('ZAI_API_KEY not configured')
       }
 
       const messages = [
@@ -131,58 +131,6 @@ export class ZAIService {
     }
   }
 
-  private generateMockResponse(message: string, conversationHistory: ChatMessage[]): ChatResponse {
-    logger.info('Generating mock response (no API key configured)', {
-      messageLength: message.length
-    })
-
-    const messageLower = message.toLowerCase()
-    
-    // Simple keyword-based responses for demo without API key
-    let response = ''
-    let toolCalls: ToolCall[] = []
-
-    if (messageLower.includes('device') && (messageLower.includes('show') || messageLower.includes('list'))) {
-      response = "I'll list all the network devices for you."
-      toolCalls = [{
-        id: 'mock-list-devices',
-        type: 'function',
-        function: {
-          name: 'list_devices',
-          arguments: '{}'
-        }
-      }]
-    } else if (messageLower.includes('backup') && messageLower.includes('create')) {
-      response = "I can help you create a backup. Which device would you like to backup?"
-    } else if (messageLower.includes('backup') && (messageLower.includes('show') || messageLower.includes('list'))) {
-      response = "I'll show you the backup history."
-      toolCalls = [{
-        id: 'mock-list-backups',
-        type: 'function',
-        function: {
-          name: 'list_backups',
-          arguments: '{}'
-        }
-      }]
-    } else if (messageLower.includes('status')) {
-      response = "I'll check the network status for you."
-      toolCalls = [{
-        id: 'mock-get-status',
-        type: 'function',
-        function: {
-          name: 'get_status',
-          arguments: '{}'
-        }
-      }]
-    } else {
-      response = "I can help you with Restorepoint network management tasks. I can show devices, create backups, check status, and manage your network infrastructure. What specific task would you like me to help with?"
-    }
-
-    return {
-      content: response,
-      tool_calls: toolCalls
-    }
-  }
 
   async executeToolCall(toolCall: ToolCall): Promise<any> {
     logger.info('Executing tool call', {

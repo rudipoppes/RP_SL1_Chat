@@ -1,0 +1,28 @@
+[Unit]
+Description=RP_SL1_Chat Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/RP_SL1_Chat/backend
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=4001
+
+# Logging
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=rp-sl1-chat-backend
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/ec2-user/RP_SL1_Chat/backend/logs
+
+[Install]
+WantedBy=multi-user.target

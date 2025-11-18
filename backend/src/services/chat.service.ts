@@ -27,6 +27,16 @@ interface ChatResult {
   executionResults?: any[]
 }
 
+interface DeviceResolutionResult {
+  success: boolean
+  data?: any[] | {
+    data?: any[]
+    result?: any
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
 export class ChatService {
   private async resolveDeviceIdentifiers(message: string): Promise<{ matchedDevices: any[], deviceContext: string }> {
     try {
@@ -55,7 +65,7 @@ export class ChatService {
           name: 'list_devices',
           arguments: '{}'
         }
-      })
+      }) as DeviceResolutionResult
       
       if (!devicesResult.success || !devicesResult.data) {
         logger.warn('Device resolution failed - no data returned')
@@ -64,7 +74,7 @@ export class ChatService {
       
       // Handle different response structures
       let allDevices: any[] = []
-      const dataResponse: any = devicesResult.data
+      const dataResponse = devicesResult.data
       
       // Log the actual structure for debugging
       logger.info('Device resolution - raw data structure', {
@@ -77,8 +87,8 @@ export class ChatService {
         message
       })
       
-      if (dataResponse.data && dataResponse.data.data) {
-        allDevices = dataResponse.data.data
+      if (dataResponse && typeof dataResponse === 'object' && 'data' in dataResponse && dataResponse.data && Array.isArray((dataResponse as any).data.data)) {
+        allDevices = (dataResponse as any).data.data
         logger.info('Device resolution - using data.data.data structure', { count: allDevices.length })
       } else if (Array.isArray(dataResponse)) {
         allDevices = dataResponse
@@ -304,6 +314,7 @@ export class ChatService {
       const toolsUsed: string[] = []
       const executionResults: any[] = []
       let finalResponse = aiResponse.content
+      let executionRound = 1  // Move declaration outside the if block
 
       // Execute tool calls if any
       if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
@@ -363,13 +374,92 @@ export class ChatService {
           }
         }
 
-        // Get final AI response after tool execution
-        const finalAiResponse = await zaiService.sendMessage(
-          'Based on the tool results, please provide a summary of what was accomplished.',
-          updatedHistory
-        )
+        // Multi-round tool execution loop - continue while AI generates tool calls
+        let nextAiResponse: any
+        
+        do {
+          logger.info('Tool execution round completed', {
+            executionRound,
+            sessionId: request.sessionId,
+            toolsUsedThisRound: toolsUsed.length
+          })
 
-        finalResponse = finalAiResponse.content || finalResponse
+          // Ask AI to process tool results and possibly generate more tool calls
+          nextAiResponse = await zaiService.sendMessage(
+            'Based on the tool results, continue executing any necessary tools. If all required work is done, provide a summary.',
+            updatedHistory
+          )
+
+          // Add AI response to history
+          updatedHistory.push({
+            role: 'assistant' as const,
+            content: nextAiResponse.content,
+            tool_calls: nextAiResponse.tool_calls
+          })
+
+          // Execute new tool calls if any
+          if (nextAiResponse.tool_calls && nextAiResponse.tool_calls.length > 0) {
+            logger.info('Processing additional tool calls', {
+              executionRound,
+              toolCount: nextAiResponse.tool_calls.length,
+              tools: nextAiResponse.tool_calls.map((t: any) => t.function.name)
+            })
+
+            for (const toolCall of nextAiResponse.tool_calls) {
+              try {
+                toolsUsed.push(toolCall.function.name)
+                
+                const result = await mcpService.executeTool(toolCall)
+                executionResults.push({
+                  toolName: toolCall.function.name,
+                  success: true,
+                  result
+                })
+
+                // Add tool result to conversation history
+                updatedHistory.push({
+                  role: 'tool' as const,
+                  tool_call_id: toolCall.id,
+                  content: JSON.stringify(result)
+                })
+
+                logger.info('Tool execution successful', {
+                  executionRound,
+                  toolName: toolCall.function.name,
+                  resultSize: JSON.stringify(result).length
+                })
+
+              } catch (error: any) {
+                logger.error('Tool execution failed', {
+                  executionRound,
+                  toolName: toolCall.function.name,
+                  error: error.message
+                })
+
+                executionResults.push({
+                  toolName: toolCall.function.name,
+                  success: false,
+                  error: error.message
+                })
+
+                // Add error result to conversation history
+                updatedHistory.push({
+                  role: 'tool' as const,
+                  tool_call_id: toolCall.id,
+                  content: JSON.stringify({ error: error.message })
+                })
+              }
+            }
+
+            executionRound++
+          }
+
+        } while (nextAiResponse.tool_calls && nextAiResponse.tool_calls.length > 0)
+
+        finalResponse = nextAiResponse.content || finalResponse
+      } else {
+        // No tool calls were made, so executionRound remains 1
+        executionRound = 1
       }
 
       const processingTime = Date.now() - startTime
@@ -385,10 +475,12 @@ export class ChatService {
       logger.info('Chat message processed successfully', {
         sessionId: request.sessionId,
         processingTimeMs: processingTime,
-        toolsUsedCount: toolsUsed.length,
+        executionRounds: executionRound,
+        totalToolsUsed: toolsUsed.length,
         toolsUsed: toolsUsed,
         responseLength: finalResponse.length,
-        hasUsage: !!(aiResponse.usage)
+        hasUsage: !!(aiResponse.usage),
+        executionResultsCount: executionResults.length
       })
 
       return result

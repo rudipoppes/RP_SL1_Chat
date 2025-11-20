@@ -4,12 +4,16 @@ A professional chat interface for managing Restorepoint network devices through 
 
 ## 🚀 Features
 
+- **Dynamic Tool Discovery**: Automatically discovers tools from MCP server with real-time synchronization
+- **Intelligent Caching**: Smart tool caching with 5-minute TTL and automatic fallback mechanisms
 - **Topic Control**: AI assistant that ONLY handles Restorepoint-related tasks
 - **HTTP Architecture**: Clean HTTP-based communication with MCP server (no stdio complexity)
-- **z.ai Integration**: Advanced AI processing with GLM-4.6 model
+- **z.ai Integration**: Advanced AI processing with GLM-4.6 model with dynamic tool injection
 - **Professional UI**: Clean interface designed for network engineers
 - **Real-time Responses**: Streaming chat experience with tool execution
 - **Strict Validation**: Input and output validation for network management only
+- **Error Resilience**: Multiple fallback layers and automatic service recovery
+- **Health Monitoring**: Comprehensive service health tracking and reporting
 
 ## 📋 Quick Start
 
@@ -98,17 +102,31 @@ Frontend (React) → Backend API → HTTP Client → MCP Server (HTTP mode)
 
 1. **Frontend**: React SPA providing the chat interface
 2. **Backend API**: Express server handling chat requests and AI integration
-3. **z.ai Service**: Processes natural language and generates tool calls
-4. **MCP HTTP Bridge**: Translates tool calls to HTTP requests
-5. **MCP Server**: Runs in HTTP mode (`ENABLE_HTTP_SERVER=true`)
+3. **z.ai Service**: Processes natural language and generates tool calls with dynamic tool injection
+4. **Tool Discovery Service**: Dynamically discovers and caches tools from MCP server
+5. **MCP HTTP Bridge**: Translates tool calls to HTTP requests
+6. **MCP Server**: Runs in HTTP mode (`ENABLE_HTTP_SERVER=true`)
 
 ### Data Flow
 
 1. User sends message via chat interface
 2. Backend validates topic (Restorepoint-only)
-3. z.ai processes message and generates tool calls
-4. MCP HTTP bridge executes tools via HTTP API
-5. Results are formatted and returned to user
+3. Tool Discovery Service provides dynamic tools to z.ai
+4. z.ai processes message and generates tool calls using real-time MCP server schemas
+5. MCP HTTP bridge executes tools via HTTP API
+6. Results are formatted and returned to user
+
+### Dynamic Tool Discovery
+
+The system now features **real-time tool discovery** that automatically:
+
+- **Discovers** all available tools from the MCP server on startup
+- **Caches** tool definitions with 5-minute TTL for performance
+- **Refreshes** tools every 2 minutes to stay synchronized
+- **Falls back** to cached tools if MCP server becomes unavailable
+- **Validates** tool schemas against actual MCP server implementation
+
+This eliminates the need for static tool definitions and ensures the AI always has access to the latest available tools with accurate schemas.
 
 ### Configuration
 

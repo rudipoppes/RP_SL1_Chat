@@ -1,7 +1,8 @@
 import axios from 'axios'
 import config from '../utils/config'
 import logger from '../utils/logger'
-import { RESTOREPOINT_SYSTEM_PROMPT, RESTOREPOINT_TOOLS } from '../utils/prompts'
+import { RESTOREPOINT_SYSTEM_PROMPT } from '../utils/prompts'
+import { toolDiscoveryService } from './tool-discovery.service'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -32,6 +33,7 @@ interface ChatResponse {
 export class ZAIService {
   private readonly apiKey: string
   private readonly baseURL = 'https://api.z.ai/api/coding/paas/v4'
+  private isInitialized = false
 
   constructor() {
     this.apiKey = config.ZAI_API_KEY
@@ -45,6 +47,11 @@ export class ZAIService {
     conversationHistory: ChatMessage[] = []
   ): Promise<ChatResponse> {
     try {
+      // Initialize service if needed
+      if (!this.isInitialized) {
+        await this.initialize()
+      }
+
       logger.info('Processing message', { 
         messageLength: message.length,
         historyLength: conversationHistory.length 
@@ -55,17 +62,26 @@ export class ZAIService {
         throw new Error('ZAI_API_KEY not configured')
       }
 
+      // Get dynamic tools from discovery service
+      const dynamicTools = await toolDiscoveryService.getToolsForAI()
+
       const messages = [
         { role: 'system', content: RESTOREPOINT_SYSTEM_PROMPT },
         ...conversationHistory,
         { role: 'user', content: message }
       ]
 
+      logger.info('Using dynamic tools for AI request', {
+        toolCount: dynamicTools.length,
+        toolNames: dynamicTools.map(t => t.function.name),
+        service: 'ZAIService'
+      })
+
       // Use GLM-4.6 model from z.ai with correct endpoint
       const response = await axios.post(`${this.baseURL}/chat/completions`, {
         model: 'glm-4.6',
         messages,
-        tools: RESTOREPOINT_TOOLS,
+        tools: dynamicTools,
         tool_choice: 'auto',
         temperature: 0.1,
         max_tokens: 1000,
@@ -131,6 +147,50 @@ export class ZAIService {
     }
   }
 
+  /**
+   * Initialize ZAI service and tool discovery
+   */
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      logger.debug('ZAIService already initialized', { service: 'ZAIService' })
+      return
+    }
+
+    try {
+      logger.info('Initializing ZAIService', { service: 'ZAIService' })
+
+      // Initialize tool discovery service
+      await toolDiscoveryService.initialize()
+
+      this.isInitialized = true
+
+      logger.info('ZAIService initialized successfully', { service: 'ZAIService' })
+
+    } catch (error: any) {
+      logger.error('Failed to initialize ZAIService', {
+        error: error.message,
+        stack: error.stack,
+        service: 'ZAIService'
+      })
+
+      // Still mark as initialized to prevent retry loops
+      this.isInitialized = true
+      throw new Error(`ZAIService initialization failed: ${error.message}`)
+    }
+  }
+
+  /**
+   * Get service status for monitoring
+   */
+  getServiceStatus(): {
+    initialized: boolean
+    toolDiscoveryStatus: any
+  } {
+    return {
+      initialized: this.isInitialized,
+      toolDiscoveryStatus: toolDiscoveryService.getServiceStatus()
+    }
+  }
 
   async executeToolCall(toolCall: ToolCall): Promise<any> {
     logger.info('Executing tool call', {

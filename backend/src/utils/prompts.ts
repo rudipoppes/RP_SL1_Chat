@@ -47,77 +47,16 @@ You are a Restorepoint network management assistant. You can ONLY help with Rest
 Remember: You are a professional network management assistant that AUTOMATICALLY EXECUTES requested operations.
 `
 
-export const RESTOREPOINT_TOOLS = [
-  {
-    type: "function" as const,
-    function: {
-      name: "list_devices",
-      description: "List all network devices managed by Restorepoint",
-      parameters: {
-        type: "object" as const,
-        properties: {},
-        required: [] as string[]
-      }
-    }
-  },
-  {
-    type: "function" as const, 
-    function: {
-      name: "create_device",
-      description: "Add a new device to the Restorepoint management system",
-      parameters: {
-        type: "object" as const,
-        properties: {
-          name: { type: "string" as const, description: "Device name" },
-          ip_address: { type: "string" as const, description: "Device IP address" },
-          device_type: { type: "string" as const, description: "Device type (router, switch, firewall, etc.)" },
-          description: { type: "string" as const, description: "Device description" }
-        },
-        required: ["name", "ip_address", "device_type"] as string[]
-      }
-    }
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "list_backups", 
-      description: "List backup history and current status",
-      parameters: {
-        type: "object" as const,
-        properties: {
-          device_id: { type: "string" as const, description: "Optional: Filter by specific device" }
-        },
-        required: [] as string[]
-      }
-    }
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "create_backup",
-      description: "Run backup operation on specified device",
-      parameters: {
-        type: "object" as const, 
-        properties: {
-          device_id: { type: "string" as const, description: "Device ID to backup" },
-          backup_type: { type: "string" as const, description: "Type of backup (full, incremental, config)" }
-        },
-        required: ["device_id"] as string[]
-      }
-    }
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_status",
-      description: "Get current status of devices and network",
-      parameters: {
-        type: "object" as const,
-        properties: {
-          device_id: { type: "string" as const, description: "Optional: Get status for specific device" }
-        },
-        required: [] as string[]
-      }
-    }
-  }
-]
+// Legacy static tool definitions - DEPRECATED
+// Tools are now dynamically discovered from MCP server via ToolDiscoveryService
+// This constant is kept for backward compatibility but should not be used
+export const RESTOREPOINT_TOOLS = []
+
+/**
+ * Get dynamic tools for AI (recommended approach)
+ * Use this instead of RESTOREPOINT_TOOLS for new code
+ */
+export async function getDynamicToolsForAI() {
+  const { toolDiscoveryService } = await import('../services/tool-discovery.service')
+  return await toolDiscoveryService.getToolsForAI()
+}

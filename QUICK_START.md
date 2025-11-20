@@ -13,7 +13,15 @@ npm run dev
 open http://localhost:3001
 ```
 
-**Test with:** "show devices"
+**Test with:** 
+- "show devices" 
+- "what is required to add a device?" (Now gives accurate requirements!)
+
+**🆕 v2.1.0 Features:**
+- ✅ **Dynamic Tool Discovery** - Automatically discovers all tools from MCP server
+- ✅ **Accurate Device Requirements** - No more incorrect IP/DeviceType requirements
+- ✅ **Real-time Synchronization** - Tools refresh every 2 minutes
+- ✅ **Intelligent Caching** - 5-minute TTL for performance
 
 **Requirements:**
 - ✅ Both repos cloned side-by-side

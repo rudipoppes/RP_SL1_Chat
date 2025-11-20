@@ -138,12 +138,22 @@ export class MCPService {
           inputSchema: {
             type: 'object',
             properties: {
-              name: { type: 'string' },
-              ip_address: { type: 'string' },
-              device_type: { type: 'string' },
-              description: { type: 'string' }
+              name: { type: 'string', description: 'Device name (1-200 characters)' },
+              type: { type: 'string', description: 'Device type identifier (cisco-ios, palo-alto, linux, etc.)' },
+              credentials: { 
+                type: 'object', 
+                properties: {
+                  username: { type: 'string', description: 'Device username' },
+                  password: { type: 'string', description: 'Device password' }
+                },
+                required: ['username', 'password']
+              },
+              ipAddress: { type: 'string', description: 'Device IP address' },
+              hostname: { type: 'string', description: 'Device hostname' },
+              description: { type: 'string', description: 'Device description' },
+              enabled: { type: 'boolean', description: 'Whether device is enabled' }
             },
-            required: ['name', 'ip_address', 'device_type']
+            required: ['name', 'type', 'credentials']
           }
         },
         {
@@ -248,6 +258,61 @@ export class MCPService {
               taskId: { type: 'string' }
             },
             required: ['taskId']
+          }
+        },
+        {
+          name: 'get_device_requirements',
+          description: 'Get comprehensive device creation requirements including supported types and examples',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              deviceType: { type: 'string', description: 'Optional: Get requirements for specific device type' }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'validate_device_request',
+          description: 'Validate device creation request before submission to create_device',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              request: { 
+                type: 'object', 
+                description: 'Device creation request to validate',
+                properties: {
+                  name: { type: 'string' },
+                  type: { type: 'string' },
+                  ipAddress: { type: 'string' },
+                  hostname: { type: 'string' },
+                  credentials: { type: 'object' },
+                  description: { type: 'string' },
+                  enabled: { type: 'boolean' }
+                }
+              }
+            },
+            required: ['request']
+          }
+        },
+        {
+          name: 'get_device',
+          description: 'Get detailed information about a specific device',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              deviceId: { type: 'string', description: 'Unique identifier of the device' },
+              includeConnections: { type: 'boolean', default: false, description: 'Include device connection information' }
+            },
+            required: ['deviceId']
+          }
+        },
+        {
+          name: 'get_status',
+          description: 'Get device and network status information',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: []
           }
         }
       ]

@@ -513,11 +513,13 @@ export class ChatService {
   async healthCheck(): Promise<{ status: string; services: any }> {
     try {
       const mcpHealth = await mcpService.healthCheck()
+      const zaiStatus = zaiService.getServiceStatus()
       
       return {
         status: 'healthy',
         services: {
-          zai_service: 'connected',
+          zai_service: zaiStatus.initialized ? 'connected' : 'initializing',
+          zai_tool_discovery: zaiStatus.toolDiscoveryStatus,
           mcp_service: mcpHealth.status,
           mcp_connected: mcpHealth.mcp_connected
         }
